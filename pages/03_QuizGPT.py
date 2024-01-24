@@ -1,9 +1,7 @@
 import streamlit as st
 
-st.title("QuizGPT")
 from langchain.document_loaders import UnstructuredFileLoader
 from langchain.text_splitter import CharacterTextSplitter
-import streamlit as st
 from langchain.retrievers import WikipediaRetriever
 
 
@@ -11,8 +9,6 @@ st.set_page_config(
     page_title="QuizGPT",
     page_icon="❓",
 )
-
-st.title("QuizGPT")
 
 
 @st.cache_data(show_spinner="Loading file...")
