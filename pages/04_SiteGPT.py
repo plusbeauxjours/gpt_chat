@@ -17,10 +17,10 @@ st.set_page_config(
 
 st.markdown(
     """
-    # SiteGPT
-    Ask questions about the content of a website.
-    Start by writing the URL of the website on the sidebar.
-"""
+        # SiteGPT
+        Ask questions about the content of a website.
+        Start by writing the URL of the website on the sidebar.
+    """
 )
 
 with st.sidebar:
