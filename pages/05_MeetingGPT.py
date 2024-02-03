@@ -1,4 +1,3 @@
-from langchain.storage import LocalFileStore
 import streamlit as st
 import subprocess
 import math
@@ -7,15 +6,50 @@ import glob
 import openai
 import os
 from langchain.chat_models import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.document_loaders import TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import StrOutputParser
 from langchain.vectorstores.faiss import FAISS
-from langchain.embeddings import CacheBackedEmbeddings, OpenAIEmbeddings
+from langchain.embeddings import OpenAIEmbeddings, CacheBackedEmbeddings
+from langchain.memory import ConversationSummaryBufferMemory, ConversationBufferMemory
+from langchain.storage import LocalFileStore
+from langchain.callbacks.base import BaseCallbackHandler
+from langchain.schema.runnable import RunnablePassthrough, RunnableLambda
+
+
+class ChatCallbackHandler(BaseCallbackHandler):
+    message = ""
+
+    def on_llm_start(self, *args, **kwargs):
+        self.message_box = st.empty()
+
+    def on_llm_end(self, *args, **kwargs):
+        save_message(self.message, "ai")
+
+    def on_llm_new_token(self, token, *args, **kwargs):
+        self.message += token
+        self.message_box.markdown(self.message)
+
 
 llm = ChatOpenAI(
     temperature=0.1,
+    streaming=True,
+    callbacks=[
+        ChatCallbackHandler(),
+    ],
+)
+
+summary_llm = ChatOpenAI(
+    temperature=0.1,
+    streaming=True,
+)
+
+memory = ConversationBufferMemory(
+    llm=llm,
+    max_token_limit=120,
+    memory_key="chat_history",
+    return_messages=True,
 )
 
 has_transcript = os.path.exists("./.cache/podcast.txt")
@@ -29,17 +63,51 @@ splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
 @st.cache_data()
 def embed_file(file_path):
     cache_dir = LocalFileStore(f"./.cache/embeddings/{file.name}")
-    splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-        chunk_size=800,
-        chunk_overlap=100,
-    )
     loader = TextLoader(file_path)
     docs = loader.load_and_split(text_splitter=splitter)
-    embeddings = OpenAIEmbeddings()
-    cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache_dir)
+    embedder = OpenAIEmbeddings()
+    cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embedder, cache_dir)
     vectorstore = FAISS.from_documents(docs, cached_embeddings)
     retriever = vectorstore.as_retriever()
     return retriever
+
+
+def save_message(message, role):
+    st.session_state["messages"].append({"message": message, "role": role})
+
+
+def save_memory(input, output):
+    st.session_state["chat_history"].append({"input": input, "output": output})
+
+
+def send_message(message, role, save=True):
+    with st.chat_message(role):
+        st.markdown(message)
+    if save:
+        save_message(message, role)
+
+
+def paint_history():
+    for message in st.session_state["messages"]:
+        send_message(message["message"], message["role"], save=False)
+
+
+def restore_memory():
+    for history in st.session_state["chat_history"]:
+        memory.save_context({"input": history["input"]}, {"output": history["output"]})
+
+
+def format_docs(docs):
+    return "\n\n".join(document.page_content for document in docs)
+
+
+def load_memory(input):
+    return memory.load_memory_variables({})["chat_history"]
+
+
+def invoke_chain(message):
+    result = chain.invoke(message)
+    save_memory(message, result.content)
 
 
 @st.cache_data()
@@ -124,6 +192,7 @@ if video:
         status.update(label="Cutting audio segments...")
         cut_audio_in_chunks(audio_path, 10, chunks_folder)
         status.update(label="Transcribing audio...")
+        status.update(label="Complete.")
         transcribe_chunks(chunks_folder, transcript_path)
 
     transcript_tab, summary_tab, qa_tab = st.tabs(
@@ -139,21 +208,25 @@ if video:
             st.write(file.read())
 
     with summary_tab:
-        start = st.button("Generate summary")
+        generate = st.button("Generate summary")
 
-        if start:
+        if generate:
             loader = TextLoader(transcript_path)
+            splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+                chunk_size=800,
+                chunk_overlap=100,
+            )
             docs = loader.load_and_split(text_splitter=splitter)
 
             first_summary_prompt = ChatPromptTemplate.from_template(
                 """
-                    Write a concise summary of the following:
-                    "{text}"
-                    CONCISE SUMMARY:                
-                """
+                Write a concise summary of the following:
+                "{text}"
+                CONCISE SUMMARY:                
+            """
             )
 
-            first_summary_chain = first_summary_prompt | llm | StrOutputParser()
+            first_summary_chain = first_summary_prompt | summary_llm | StrOutputParser()
 
             summary = first_summary_chain.invoke(
                 {"text": docs[0].page_content},
@@ -172,7 +245,7 @@ if video:
                 """
             )
 
-            refine_chain = refine_prompt | llm | StrOutputParser()
+            refine_chain = refine_prompt | summary_llm | StrOutputParser()
 
             with st.status("Summarizing...") as status:
                 for i, doc in enumerate(docs[1:]):
@@ -184,11 +257,39 @@ if video:
                         }
                     )
                     st.write(summary)
-            st.write(summary)
 
-            with qa_tab:
-                retriever = embed_file(transcript_path)
-
-                docs = retriever.invoke("do they talk about marcus aurelius?")
-
-                st.write(docs)
+    with qa_tab:
+        retriever = embed_file(transcript_path)
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    """
+                        Answer the question using ONLY the following context. If you don't know the answer, just say you don't know. DO NOT MAKE UP anything.
+                        Context:{context}
+                    """,
+                ),
+                MessagesPlaceholder(variable_name="chat_history"),
+                ("human", "{question}"),
+            ]
+        )
+        send_message("Ask anything about the video", "ai", save=False)
+        restore_memory()
+        paint_history()
+        question = st.text_input("Type your question here.")
+        if question:
+            send_message(question, "human")
+            chain = (
+                {
+                    "context": retriever | RunnableLambda(format_docs),
+                    "chat_history": load_memory,
+                    "question": RunnablePassthrough(),
+                }
+                | prompt
+                | llm
+            )
+            with st.chat_message("ai"):
+                invoke_chain(question)
+else:
+    st.session_state["messages"] = []
+    st.session_state["chat_history"] = []
