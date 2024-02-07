@@ -2,25 +2,25 @@ from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
 app = FastAPI(
-    title="Nicolacus Maximus Quote Giver",
-    description="Get a real quote said by Nicolacus Maximus himself.",
+    title="Leonardo da Vinci Quote Giver",
+    description="Get a real quote said by Leonardo da Vinci himself.",
 )
 
 
 class Quote(BaseModel):
     quote: str = Field(
-        description="The quote that Nicolacus Maximus said.",
+        description="The quote that Leonardo da Vinci said.",
     )
     year: int = Field(
-        description="The year when Nicolacus Maximus said the quote.",
+        description="The year when Leonardo da Vinci said the quote.",
     )
 
 
 @app.get(
     "/quote",
-    summary="Returns a random quote by Nicolacus Maximus",
-    description="Upon receiving a GET request this endpoint will return a real quiote said by Nicolacus Maximus himself.",
-    response_description="A Quote object that contains the quote said by Nicolacus Maximus and the date when the quote was said.",
+    summary="Returns a random quote by Leonardo da Vinci",
+    description="Upon receiving a GET request this endpoint will return a real quiote said by Leonardo da Vinci himself.",
+    response_description="A Quote object that contains the quote said by Leonardo da Vinci and the date when the quote was said.",
     response_model=Quote,
 )
 def get_quote():
