@@ -4,6 +4,11 @@ from pydantic import BaseModel, Field
 app = FastAPI(
     title="Leonardo da Vinci Quote Giver",
     description="Get a real quote said by Leonardo da Vinci himself.",
+    servers=[
+        {
+            "url": "https://rage-adapter-gtk-wooden.trycloudflare.com",
+        },
+    ],
 )
 
 
