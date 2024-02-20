@@ -6,7 +6,7 @@ app = FastAPI(
     description="Get a real quote said by Leonardo da Vinci himself.",
     servers=[
         {
-            "url": "https://rage-adapter-gtk-wooden.trycloudflare.com",
+            "url": "https://representation-issue-adding-producer.trycloudflare.com",
         },
     ],
 )
@@ -27,6 +27,9 @@ class Quote(BaseModel):
     description="Upon receiving a GET request this endpoint will return a real quiote said by Leonardo da Vinci himself.",
     response_description="A Quote object that contains the quote said by Leonardo da Vinci and the date when the quote was said.",
     response_model=Quote,
+    openapi_extra={
+        "x-openai-isConsequential": False,
+    },
 )
 def get_quote(request: Request):
     print(request.headers)
