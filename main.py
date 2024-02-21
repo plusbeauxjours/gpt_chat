@@ -1,4 +1,6 @@
-from fastapi import FastAPI, Request
+from typing import Any, Dict
+from fastapi import Body, FastAPI, Form, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 app = FastAPI(
@@ -36,4 +38,32 @@ def get_quote(request: Request):
     return {
         "quote": "Life is short so eat it all.",
         "year": 1950,
+    }
+
+
+user_token_db = {"ABCDEF": "minjae"}
+
+
+@app.get(
+    "/authorize",
+    response_class=HTMLResponse,
+)
+def handle_authorize(client_id: str, redirect_uri: str, state: str):
+    return f"""
+    <html>
+        <head>
+            <title>Leonardo da Vinci Log In</title>
+        </head>
+        <body>
+            <h1>Log Into Leonardo da Vinci</h1>
+            <a href="{redirect_uri}?code=ABCDEF&state={state}">Authorize Leonardo da Vinci GPT</a>
+        </body>
+    </html>
+    """
+
+
+@app.post("/token")
+def handle_token(code=Form(...)):
+    return {
+        "access_token": user_token_db[code],
     }
